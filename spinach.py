@@ -1,12 +1,14 @@
 import cv2
 from scipy.spatial import distance as dist
 import numpy as np
-import os, glob
+import os, glob, sys
+
+isVideo = len(sys.argv) > 1 and sys.argv[1] == 'video'
 
 roi_width = 60
 floor_level = 220
 floor_diff = 130
-day_diff = 27
+day_diff = 1785//2 if isVideo else 27
 seed_radius = 5
 seeds = [
     (58, 254),
@@ -18,11 +20,10 @@ seeds = [
     # (473, 252),
     (543, 252)
 ]
-os.chdir('data')
-images = sorted(glob.glob('*.jpeg'))
-for day, image in enumerate(images):
-    im = cv2.imread(image)
+
+def process(im, day, wait_press=False):
     im = cv2.resize(im, (600, 480))
+    floor = floor_level+floor_diff if day >= day_diff else floor_level
 
     # convert to HSV and find green areas
     green_lower = np.array([23, 80, 80], dtype=np.uint8)
@@ -45,7 +46,7 @@ for day, image in enumerate(images):
     clossing_with_canny = hsv_closing | canny_closing
 
     # Ignore all bellow the floor
-    clossing_with_canny[floor_level+floor_diff if day >= day_diff else floor_level:,:] = 0
+    clossing_with_canny[floor:,:] = 0
 
     # Fill holes
     im_floodfill = clossing_with_canny.copy()
@@ -88,20 +89,24 @@ for day, image in enumerate(images):
     contours[:,c_h-1] = False
     im[contours] = [255, 255, 0]
 
-    for seed in seeds:
-        l, r = int(seed[0]-roi_width/2), int(seed[0]+roi_width/2)
+    heights = np.zeros(len(seeds))
+    for n_seed, seed in enumerate(seeds):
+        l, r = seed[0]-roi_width//2, seed[0]+roi_width//2
         roi = contours[:,l:r]
         # find upper extreme contour
         roi_w, roi_h = roi.shape
         upper = None
-        for i in range(roi_w-1, -1, -1):
-            for j in range(roi_h-1, -1, -1):
+        for i in range(roi_w):
+            for j in range(roi_h):
                 if roi[i, j]:
-                    upper = (j+seed[0]-int(roi_width/2), i)
-
-        # Draw max value
-        if upper:
-            cv2.circle(im, upper, 5, (0, 128, 128), cv2.FILLED)
+                    upper = (j+seed[0]-roi_width//2, i)
+                    break
+            if upper:
+                # Draw max value
+                cv2.circle(im, upper, 5, (0, 128, 128), cv2.FILLED)
+                heights[n_seed] = floor - upper[1]
+                # Add height measure to result
+                break
 
         # draw roi delimiters
         cv2.line(im, (l, 0), (l, roi_w), (0, 205, 0))
@@ -123,5 +128,37 @@ for day, image in enumerate(images):
     cv2.imshow('markers', colored)
     cv2.imshow('original', im)
 
-    if cv2.waitKey(0) & 0xFF == ord('q'):
-        break
+    if wait_press:
+        if cv2.waitKey(0) & 0xFF == ord('q'):
+            return 1
+    else:
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            return 1
+    return heights
+
+measures = []
+if isVideo:
+    cap = cv2.VideoCapture('spinach.mp4')
+    n_frame = 0
+    while cap.isOpened():
+        # If hit 'q' then quit
+        cap.read()
+        _, im = cap.read()
+        spinach_heights = process(im, n_frame)
+        if type(spinach_heights) is int and spinach_heights is -1:
+            break
+        measures.append(spinach_heights)
+        n_frame += 1
+    print(n_frame)
+    cap.release()
+else:
+    os.chdir('data')
+    images = sorted(glob.glob('*.jpeg'))
+    for day, image in enumerate(images):
+        # If hit 'q' then quit
+        spinach_heights = process(cv2.imread(image), day, wait_press=True)
+        if type(spinach_heights) is int and spinach_heights is -1:
+            break
+        measures.append(spinach_heights)
+print(measures)
+cv2.destroyAllWindows()
