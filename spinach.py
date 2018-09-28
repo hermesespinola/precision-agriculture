@@ -5,8 +5,8 @@ from pprint import pprint
 from matplotlib import pyplot as plt
 
 # Settings to calculate real values
-focal_length = 53.3
-spinach_dist = 500.0 # mm
+focal_length = 65.0
+spinach_dist = 100.0 # mm
 size = (600, 480)
 
 # Asumming no distortion nor lense imperfections
@@ -103,7 +103,7 @@ def process(im, day, wait_press=False, out_org=None, out_markers=None):
     for n_seed, seed in enumerate(seeds):
         l, r = seed[0]-roi_width//2, seed[0]+roi_width//2
         roi = contours[:,l:r]
-        # find upper extreme contour
+        # find upper extreme of each contour
         roi_w, roi_h = roi.shape
         upper = 0
         for i in range(roi_w):
@@ -114,7 +114,8 @@ def process(im, day, wait_press=False, out_org=None, out_markers=None):
             if upper:
                 # Draw max value
                 cv2.circle(im_resized, upper, 5, (0, 128, 128), cv2.FILLED)
-                heights[n_seed] = im_resized.shape[1] / im_resized.shape[1] * (floor - upper[1])
+                # Calculate 
+                heights[n_seed] = calculate_height(im_resized.shape[1] / im_resized.shape[1] * (floor - upper[1]))
                 # Add height measure to result
                 break
 
@@ -137,8 +138,10 @@ def process(im, day, wait_press=False, out_org=None, out_markers=None):
     cv2.imshow('flooded without noise', opening)
     cv2.imshow('markers', colored)
     cv2.imshow('original', im_resized)
-    out_org.write(im_resized)
-    out_markers.write(colored)
+    if out_org:
+        out_org.write(im_resized)
+    if out_markers:
+        out_markers.write(colored)
 
     if wait_press:
         if cv2.waitKey(0) & 0xFF == ord('q'):
@@ -181,13 +184,13 @@ else:
             break
         measures.append([calculate_height(px_height) / 100 for px_height in spinach_heights])
 
-# plot heights
-_, ax = plt.subplots()
-ax.set_color_cycle(['red', 'blue', 'green'])
-plt.plot(measures)
-plt.xlabel('frame' if isVideo else 'day')
-plt.ylabel('height (cm)')
-plt.pause(0.1)
+        # plot heights
+        _, ax = plt.subplots()
+        ax.set_color_cycle(['red', 'blue', 'green'])
+        plt.plot(measures)
+        plt.xlabel('frame' if isVideo else 'day')
+        plt.ylabel('height (cm)')
+        plt.pause(0.1)
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
